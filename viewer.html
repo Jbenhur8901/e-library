@@ -1,46 +1,262 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Visionneuse PDF</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf_viewer.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <style>
-        body {
-            margin: 0;
-            padding: 0;
-            background-color: #f4f4f4;
+        #viewerContainer {
+            width: 100%;
+            height: calc(100vh - 50px);
+            overflow: auto;
+            background: #404040;
+            position: relative;
+            margin-top: 50px;
+        }
+        
+        #viewer {
+            width: 100%;
+            height: 100%;
+            display: block;
+            margin: 0 auto;
+        }
+
+        .toolbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 50px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px;
             display: flex;
             justify-content: center;
             align-items: center;
-            height: 100vh;
+            gap: 10px;
+            z-index: 1000;
         }
 
-        .pdf-viewer-container {
-            width: 90vw;
-            height: 90vh;
-        }
-
-        iframe {
-            width: 100%;
-            height: 100%;
+        .toolbar button {
+            background: #4CAF50;
             border: none;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .toolbar button:hover {
+            background: #45a049;
+        }
+
+        #pageNum {
+            color: white;
+            margin: auto 10px;
+            min-width: 100px;
+            text-align: center;
+        }
+
+        .loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 18px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 20px;
+            border-radius: 8px;
+            z-index: 1001;
+        }
+
+        @media (max-width: 768px) {
+            .toolbar {
+                padding: 5px;
+                flex-wrap: wrap;
+                height: auto;
+            }
+
+            .toolbar button {
+                padding: 6px 12px;
+                font-size: 12px;
+            }
+
+            #viewerContainer {
+                height: calc(100vh - 60px);
+                margin-top: 60px;
+            }
         }
     </style>
 </head>
 <body>
-    <div class="pdf-viewer-container">
-        <iframe src=""></iframe>
+    <div id="loading" class="loading">Chargement du document...</div>
+    <div class="toolbar">
+        <button id="prev">←</button>
+        <span id="pageNum"></span>
+        <button id="next">→</button>
+        <button id="zoomIn">+</button>
+        <button id="zoomOut">-</button>
+        <button id="download">Télécharger</button>
+        <button id="home">Accueil</button>
     </div>
-    <script>
-        const urlParams = new URLSearchParams(window.location.search);
-        const pdfFile = urlParams.get('pdf');
-        const iframe = document.querySelector('iframe');
+    <div id="viewerContainer">
+        <canvas id="viewer"></canvas>
+    </div>
 
-        if (pdfFile) {
-            iframe.src = pdfFile;
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        let pdfDoc = null;
+        let pageNum = 1;
+        let scale = 1.0;
+        let pdfUrl = '';
+        const canvas = document.getElementById('viewer');
+        const ctx = canvas.getContext('2d');
+        const loading = document.getElementById('loading');
+
+        // Récupérer le PDF depuis l'URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const pdfPath = urlParams.get('pdf');
+
+        if (!pdfPath) {
+            document.body.innerHTML = '<div class="error">Aucun document PDF spécifié</div>';
         } else {
-            document.body.innerHTML = '<h1>Aucun document PDF spécifié</h1>';
+            pdfUrl = pdfPath;
+            loadPDF(pdfUrl);
         }
+
+        async function loadPDF(url) {
+            try {
+                const loadingTask = pdfjsLib.getDocument(url);
+                
+                loadingTask.onProgress = function(progress) {
+                    const percent = Math.round(progress.loaded / progress.total * 100);
+                    loading.textContent = `Chargement: ${percent}%`;
+                };
+
+                pdfDoc = await loadingTask.promise;
+                document.getElementById('pageNum').textContent = `Page ${pageNum} / ${pdfDoc.numPages}`;
+                loading.style.display = 'none';
+                renderPage(pageNum);
+            } catch (error) {
+                console.error('Erreur lors du chargement du PDF:', error);
+                loading.textContent = 'Erreur lors du chargement du PDF';
+            }
+        }
+
+        async function renderPage(num) {
+            loading.style.display = 'block';
+            loading.textContent = 'Chargement de la page...';
+
+            try {
+                const page = await pdfDoc.getPage(num);
+                const viewport = page.getViewport({ scale: scale });
+
+                // Adapter la taille du canvas à la viewport et à la résolution de l'écran
+                const pixelRatio = window.devicePixelRatio || 1;
+                canvas.width = viewport.width * pixelRatio;
+                canvas.height = viewport.height * pixelRatio;
+                canvas.style.width = viewport.width + 'px';
+                canvas.style.height = viewport.height + 'px';
+
+                // Mettre à l'échelle le contexte pour la haute résolution
+                ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+
+                const renderContext = {
+                    canvasContext: ctx,
+                    viewport: viewport
+                };
+
+                await page.render(renderContext).promise;
+                loading.style.display = 'none';
+            } catch (error) {
+                console.error('Erreur lors du rendu de la page:', error);
+                loading.textContent = 'Erreur lors du rendu de la page';
+            }
+        }
+
+        // Gestionnaires d'événements
+        document.getElementById('prev').addEventListener('click', () => {
+            if (pageNum > 1) {
+                pageNum--;
+                renderPage(pageNum);
+                document.getElementById('pageNum').textContent = `Page ${pageNum} / ${pdfDoc.numPages}`;
+            }
+        });
+
+        document.getElementById('next').addEventListener('click', () => {
+            if (pageNum < pdfDoc.numPages) {
+                pageNum++;
+                renderPage(pageNum);
+                document.getElementById('pageNum').textContent = `Page ${pageNum} / ${pdfDoc.numPages}`;
+            }
+        });
+
+        document.getElementById('zoomIn').addEventListener('click', () => {
+            scale *= 1.2;
+            renderPage(pageNum);
+        });
+
+        document.getElementById('zoomOut').addEventListener('click', () => {
+            scale *= 0.8;
+            renderPage(pageNum);
+        });
+
+        document.getElementById('home').addEventListener('click', () => {
+            window.location.href = 'index.html';
+        });
+
+        document.getElementById('download').addEventListener('click', () => {
+            const link = document.createElement('a');
+            link.href = pdfUrl;
+            link.download = pdfUrl.split('/').pop();
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        });
+
+        // Gestion du touch pour le zoom
+        let touchDistance = 0;
+        let lastTouchDistance = 0;
+        
+        document.getElementById('viewerContainer').addEventListener('touchstart', (e) => {
+            if (e.touches.length === 2) {
+                touchDistance = Math.hypot(
+                    e.touches[0].pageX - e.touches[1].pageX,
+                    e.touches[0].pageY - e.touches[1].pageY
+                );
+                lastTouchDistance = touchDistance;
+            }
+        });
+
+        document.getElementById('viewerContainer').addEventListener('touchmove', (e) => {
+            if (e.touches.length === 2) {
+                e.preventDefault();
+                touchDistance = Math.hypot(
+                    e.touches[0].pageX - e.touches[1].pageX,
+                    e.touches[0].pageY - e.touches[1].pageY
+                );
+                
+                if (Math.abs(touchDistance - lastTouchDistance) > 10) {
+                    scale *= touchDistance > lastTouchDistance ? 1.02 : 0.98;
+                    lastTouchDistance = touchDistance;
+                    renderPage(pageNum);
+                }
+            }
+        });
+
+        // Gestion du redimensionnement de la fenêtre
+        let resizeTimeout;
+        window.addEventListener('resize', () => {
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(() => {
+                renderPage(pageNum);
+            }, 200);
+        });
     </script>
 </body>
 </html>
