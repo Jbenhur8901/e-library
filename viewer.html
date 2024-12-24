@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visionneuse PDF</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        /* PDF Viewer Styles */
+        body {
+            margin: 0;
+            padding: 0;
+        }
+
+        .pdf-viewer {
+            width: 100vw;
+            height: 100vh;
+            border: none;
+        }
+    </style>
+</head>
+<body>
+    <iframe 
+        class="pdf-viewer" 
+        src="">
+    </iframe>
+    <script>
+        // Charger le document PDF basé sur l'URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const pdfFile = urlParams.get('pdf');
+        const iframe = document.querySelector('.pdf-viewer');
+
+        if (pdfFile) {
+            iframe.src = pdfFile;
+        } else {
+            document.body.innerHTML = '<h1>Aucun document PDF spécifié</h1>';
+        }
+    </script>
+</body>
+</html>
