@@ -4,31 +4,37 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Visionneuse PDF</title>
-    <link rel="stylesheet" href="styles.css">
     <style>
-        /* PDF Viewer Styles */
         body {
             margin: 0;
             padding: 0;
+            background-color: #f4f4f4;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
         }
 
-        .pdf-viewer {
-            width: 100vw;
-            height: 100vh;
+        .pdf-viewer-container {
+            width: 90vw;
+            height: 90vh;
+        }
+
+        iframe {
+            width: 100%;
+            height: 100%;
             border: none;
         }
     </style>
 </head>
 <body>
-    <iframe 
-        class="pdf-viewer" 
-        src="">
-    </iframe>
+    <div class="pdf-viewer-container">
+        <iframe src=""></iframe>
+    </div>
     <script>
-        // Charger le document PDF basé sur l'URL
         const urlParams = new URLSearchParams(window.location.search);
         const pdfFile = urlParams.get('pdf');
-        const iframe = document.querySelector('.pdf-viewer');
+        const iframe = document.querySelector('iframe');
 
         if (pdfFile) {
             iframe.src = pdfFile;
