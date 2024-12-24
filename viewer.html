@@ -11,17 +11,37 @@
         #viewerContainer {
             width: 100%;
             height: calc(100vh - 50px);
-            overflow: auto;
+            overflow-y: auto;
             background: #404040;
             position: relative;
             margin-top: 50px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px 0;
         }
         
-        #viewer {
+        #pagesContainer {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
             width: 100%;
-            height: 100%;
-            display: block;
-            margin: 0 auto;
+            max-width: 1000px;
+            padding: 0 20px;
+        }
+
+        .page-wrapper {
+            background: white;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            display: flex;
+            justify-content: center;
+            padding: 10px;
+            border-radius: 5px;
+        }
+
+        .page-canvas {
+            max-width: 100%;
+            height: auto;
         }
 
         .toolbar {
@@ -53,7 +73,7 @@
             background: #45a049;
         }
 
-        #pageNum {
+        #pageInfo {
             color: white;
             margin: auto 10px;
             min-width: 100px;
@@ -89,34 +109,49 @@
                 height: calc(100vh - 60px);
                 margin-top: 60px;
             }
+
+            #pagesContainer {
+                padding: 0 10px;
+            }
         }
     </style>
 </head>
 <body>
     <div id="loading" class="loading">Chargement du document...</div>
     <div class="toolbar">
-        <button id="prev">←</button>
-        <span id="pageNum"></span>
-        <button id="next">→</button>
         <button id="zoomIn">+</button>
         <button id="zoomOut">-</button>
+        <span id="pageInfo"></span>
         <button id="download">Télécharger</button>
         <button id="home">Accueil</button>
     </div>
     <div id="viewerContainer">
-        <canvas id="viewer"></canvas>
+        <div id="pagesContainer"></div>
     </div>
 
     <script>
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
         let pdfDoc = null;
-        let pageNum = 1;
         let scale = 1.0;
         let pdfUrl = '';
-        const canvas = document.getElementById('viewer');
-        const ctx = canvas.getContext('2d');
+        const pagesContainer = document.getElementById('pagesContainer');
         const loading = document.getElementById('loading');
+        const pageInfo = document.getElementById('pageInfo');
+        
+        // Observer pour le chargement lazy des pages
+        const observer = new IntersectionObserver((entries, observer) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const pageNum = parseInt(entry.target.dataset.pageNum);
+                    if (!entry.target.querySelector('canvas')) {
+                        renderPage(pageNum, entry.target);
+                    }
+                }
+            });
+        }, {
+            threshold: 0.1
+        });
 
         // Récupérer le PDF depuis l'URL
         const urlParams = new URLSearchParams(window.location.search);
@@ -139,22 +174,32 @@
                 };
 
                 pdfDoc = await loadingTask.promise;
-                document.getElementById('pageNum').textContent = `Page ${pageNum} / ${pdfDoc.numPages}`;
+                pageInfo.textContent = `Pages: ${pdfDoc.numPages}`;
+                
+                // Créer les conteneurs de pages
+                for (let i = 1; i <= pdfDoc.numPages; i++) {
+                    const pageWrapper = document.createElement('div');
+                    pageWrapper.className = 'page-wrapper';
+                    pageWrapper.dataset.pageNum = i;
+                    pagesContainer.appendChild(pageWrapper);
+                    observer.observe(pageWrapper);
+                }
+
                 loading.style.display = 'none';
-                renderPage(pageNum);
             } catch (error) {
                 console.error('Erreur lors du chargement du PDF:', error);
                 loading.textContent = 'Erreur lors du chargement du PDF';
             }
         }
 
-        async function renderPage(num) {
-            loading.style.display = 'block';
-            loading.textContent = 'Chargement de la page...';
-
+        async function renderPage(pageNum, container) {
             try {
-                const page = await pdfDoc.getPage(num);
+                const page = await pdfDoc.getPage(pageNum);
                 const viewport = page.getViewport({ scale: scale });
+
+                const canvas = document.createElement('canvas');
+                canvas.className = 'page-canvas';
+                const ctx = canvas.getContext('2d');
 
                 // Adapter la taille du canvas à la viewport et à la résolution de l'écran
                 const pixelRatio = window.devicePixelRatio || 1;
@@ -171,39 +216,32 @@
                     viewport: viewport
                 };
 
+                container.innerHTML = '';
+                container.appendChild(canvas);
                 await page.render(renderContext).promise;
-                loading.style.display = 'none';
             } catch (error) {
                 console.error('Erreur lors du rendu de la page:', error);
-                loading.textContent = 'Erreur lors du rendu de la page';
+                container.textContent = 'Erreur lors du rendu de la page';
             }
         }
 
+        async function reRenderAllPages() {
+            const pageWrappers = document.querySelectorAll('.page-wrapper');
+            pageWrappers.forEach(wrapper => {
+                const pageNum = parseInt(wrapper.dataset.pageNum);
+                renderPage(pageNum, wrapper);
+            });
+        }
+
         // Gestionnaires d'événements
-        document.getElementById('prev').addEventListener('click', () => {
-            if (pageNum > 1) {
-                pageNum--;
-                renderPage(pageNum);
-                document.getElementById('pageNum').textContent = `Page ${pageNum} / ${pdfDoc.numPages}`;
-            }
-        });
-
-        document.getElementById('next').addEventListener('click', () => {
-            if (pageNum < pdfDoc.numPages) {
-                pageNum++;
-                renderPage(pageNum);
-                document.getElementById('pageNum').textContent = `Page ${pageNum} / ${pdfDoc.numPages}`;
-            }
-        });
-
         document.getElementById('zoomIn').addEventListener('click', () => {
             scale *= 1.2;
-            renderPage(pageNum);
+            reRenderAllPages();
         });
 
         document.getElementById('zoomOut').addEventListener('click', () => {
             scale *= 0.8;
-            renderPage(pageNum);
+            reRenderAllPages();
         });
 
         document.getElementById('home').addEventListener('click', () => {
@@ -219,7 +257,7 @@
             document.body.removeChild(link);
         });
 
-        // Gestion du touch pour le zoom
+        // Gestion du pinch-zoom
         let touchDistance = 0;
         let lastTouchDistance = 0;
         
@@ -244,17 +282,17 @@
                 if (Math.abs(touchDistance - lastTouchDistance) > 10) {
                     scale *= touchDistance > lastTouchDistance ? 1.02 : 0.98;
                     lastTouchDistance = touchDistance;
-                    renderPage(pageNum);
+                    reRenderAllPages();
                 }
             }
         });
 
-        // Gestion du redimensionnement de la fenêtre
+        // Optimisation du redimensionnement
         let resizeTimeout;
         window.addEventListener('resize', () => {
             clearTimeout(resizeTimeout);
             resizeTimeout = setTimeout(() => {
-                renderPage(pageNum);
+                reRenderAllPages();
             }, 200);
         });
     </script>
